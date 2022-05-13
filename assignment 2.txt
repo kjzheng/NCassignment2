@@ -1,0 +1,186 @@
+Your exercise environment Jumphost ip address is : 20.205.213.46, student number is 4.
+-------------------------------------------------------------------------------------------------------------------------------------
+
+Mount sdc to put nextcloud on 
+# Format /dev/sdc
+sudo mkfs -t ext4 /dev/sdc
+# Create a folder to keep nextcloud
+sudo mkdir -p /nextcloud
+# Mount sdc on mountpoint
+mount /dev/sdc /nextcloud
+# make mounting permanent
+nano /etc/fstab 
+#add in line of
+/dev/sdc        /nextcloud        ext4   default    0  0   
+----------------------------------------------------------------------------------------------------
+1. install nginx and php
+
+yum -y install epel-release
+yum -y install nginx
+# php repo config
+wget https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+wget http://rpms.remirepo.net/enterprise/remi-release-7.rpm
+rpm -Uvh remi-release-7.rpm epel-release-latest-7.noarch.rpm
+# enable server to install php7.0 or other php versions
+sudo yum-config-manager --disable remi-php54
+sudo yum-config-manager --enable remi-php70
+#install php
+sudo yum install php php-xml php-mbstring php-fpm php-cli php-common php-gd php-json php-ldap php-mysqlnd php-pdo php-common php-zip
+#remove php
+sudo yum -y remove php*
+#check php
+php -v
+----------------------------------------------------------------------------------------------------
+2. Configure php-fpm
+
+sudo nano /etc/php-fpm.d/www.conf
+
+#in line 8 and 10
+user = nginx
+group = nginx
+#in line 22
+listen = 127.0.0.1:9000
+#Uncomment line 366-370 to activate the php-fpm system environment variables
+env[HOSTNAME] = $HOSTNAME
+env[PATH] = /usr/local/bin:/usr/bin:/bin
+env[TMP] = /tmp
+env[TMPDIR] = /tmp
+env[TEMP] = /tmp
+
+#Next, create a new directory for the session path in the '/var/lib/' directory, and change the owner to the 'nginx' user.
+
+sudo mkdir -p /var/lib/php/session
+sudo chown nginx:nginx -R /var/lib/php/session/
+
+#Now start php-fpm and Nginx, then enable the services to start at boot time.
+sudo systemctl start php-fpm
+sudo systemctl start nginx
+ 
+sudo systemctl enable php-fpm
+sudo systemctl enable nginx
+----------------------------------------------------------------------------------------------------
+3. Install and configure mariadb
+# Install mariadb
+yum -y install mariadb mariadb-server
+# Start mariadb and add it to run at boot
+sudo systemctl start mariadb
+sudo systemctl enable mariadb
+# Configure mariadb root password
+mysql_secure_installation
+# Type password when requested for mariadb password
+Set root password? [Y/n] Y
+New password:
+Re-enter new password:
+ 
+Remove anonymous users? [Y/n] Y
+Disallow root login remotely? [Y/n] Y
+Remove test database and access to it? [Y/n] Y
+Reload privilege tables now? [Y/n] Y
+#The MariaDB root password has been set, now we can login to the mysql shell to create a new database and a new user for Nextcloud. I will create a new database named 'nextcloud_db' and a user 'nextclouduser' with password 'nextclouduser@'. Choose a secure password for your installation!
+mysql -u root -p
+Type Password
+#Type in the mysql query below to create a new database and a new user.
+create database nextcloud_db;
+create user nextclouduser@localhost identified by 'nextclouduser@';
+grant all privileges on nextcloud_db.* to nextclouduser@localhost identified by 'nextclouduser@';
+flush privileges;
+
+# Commands for mariadb to check databases
+show databases;
+
+----------------------------------------------------------------------------------------------------
+4. Generate a self signed SSL cert for nextcloud
+# Create a dir for SSL file
+mkdir -p /etc/nginx/cert/
+# generate new SSL cert with openssl command below
+openssl req -new -x509 -days 365 -nodes -out /etc/nginx/cert/nextcloud.crt -keyout /etc/nginx/cert/nextcloud.key
+# change the .key and .crt file with chomd 600, 
+chmod 700 /etc/nginx/cert
+chmod 600 /etc/nginx/cert/*
+# check what is inside of cert folder
+sudo ll /etc/nginx/cert/
+#chmod the crt and key individually
+chmod 600 /etc/nginx/cert/nextcloud.crt
+chmod 600 /etc/nginx/cert/nextcloud.key
+----------------------------------------------------------------------------------------------------
+5. Download and install nextcloud
+# get unzip
+yum -y install unzip
+#go to nextcloud directory
+cd /nextcloud/ncinstall
+wget https://download.nextcloud.com/server/releases/nextcloud-10.0.2.zip
+# Extract nextcloud-10.0.2.zip to /nextcloud/ncinstall/nextcloud/
+unzip nextcloud-10.0.2.zip
+# create data directory for nextcloud
+mkdir -p /nextcloud/ncdata/
+# change owner of nextcloud directory to nginx user and group
+sudo chown nginx:nginx -R nextcloud/
+----------------------------------------------------------------------------------------------------
+6. Configure Nextcloud virtual host config in nginx
+
+sudo nano /etc/nginx/conf.d/nextcloud.conf
+
+----------------------------------------------------------------------------------
+
+# test the nginx config and restart
+sudo nginx -t
+sudo systemctl restart nginx
+----------------------------------------------------------------------------------------------------
+
+7. Configure SElinux and firewallD for nextcloud
+yum -y install policycoreutils-python
+
+# execute commands below as root to allow nextcloud to run under SElinux
+sudo semanage fcontext -a -t httpd_sys_rw_content_t "/nextcloud/ncdata(/.*)?"
+sudo semanage fcontext -a -t httpd_sys_rw_content_t "/nextcloud/ncinstall/nextcloud/config(/.*)?"
+sudo semanage fcontext -a -t httpd_sys_rw_content_t "/nextcloud/ncinstall/nextcloud/apps(/.*)?"
+sudo semanage fcontext -a -t httpd_sys_rw_content_t "/nextcloud/ncinstall/nextcloud/assets(/.*)?"
+sudo semanage fcontext -a -t httpd_sys_rw_content_t "/nextcloud/ncinstall/nextcloud/.htaccess"
+sudo semanage fcontext -a -t httpd_sys_rw_content_t "/nextcloud/ncinstall/nextcloud/.user.ini"
+ 
+sudo restorecon -Rv "/nextcloud/ncinstall/nextcloud/"
+
+# start firewalld and enable to start at boot time
+sudo systemctl start firewalld
+sudo systemctl enable firewalld
+
+# Now open the HTTP and HTTPS ports with the firewall-cmd command, then reload the firewall.
+sudo firewall-cmd --permanent --add-service=http
+sudo firewall-cmd --permanent --add-service=https
+sudo firewall-cmd --reload
+
+--------------------------------------------------------------------------------------------------------
+8. Set up reverse proxy on 10.1.4.5
+# Install nginx
+yum -y install epel-release
+yum -y install nginx
+
+---------------------------------------------------------------------------------------------------------
+9. Set up php config file in nextcloud folder 10.1.4.4 and proxy config in proxy server nginx folder 10.1.4.5
+php config file uploaded together
+nginx proxy config file uploaded together
+
+
+
+-------------Stuff of AD------------------------------------------------------------------------
+#RDP into 10.4.6
+#Install Active Directory
+#Use powershell admin in AD Server
+# install AD DS with admin tools
+PS C:\Users\Administrator> Install-WindowsFeature -name AD-Domain-Services -IncludeManagementTools 
+
+Success Restart Needed Exit Code      Feature Result
+------- -------------- ---------      --------------
+True    Yes            SuccessRest... {Active Directory ,...
+WARNING: You must restart this server to finish the installation process.
+
+# restart computer to apply changes
+PS C:\Users\Administrator> Restart-Computer -Force 
+
+#install php-ldap in the server with nextcloud
+# Domain controller options Deployment Config "nextcloud.com" as root domain name
+
+#go to active directory users and computers
+#under users, create new user
+# set name as "nextcloudldap"
+#under nextcloud AD integration, server LDAP settings
