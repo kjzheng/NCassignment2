@@ -36,3 +36,4 @@ $CONFIG = array (
 
 
 # put it in /nextcloud/ncinstall/nextcloud/config/config.php
+# change line 3,4,5 to the values in your original file 
